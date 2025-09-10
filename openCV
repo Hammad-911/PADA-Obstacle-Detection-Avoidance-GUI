@@ -1,0 +1,96 @@
+import cv2
+import numpy as np
+
+# =================================================================================
+# This file contains the corrected computer vision logic for the PADA project.
+# =================================================================================
+
+def detectShape(contour):
+    """Approximates the shape of a contour (Triangle, Square, or Circle)."""
+    approx = cv2.approxPolyDP(contour, 0.04 * cv2.arcLength(contour, True), True)
+    if len(approx) == 3: return "Triangle"
+    elif len(approx) == 4:
+        (x, y, w, h) = cv2.boundingRect(approx)
+        if 0.95 <= float(w) / h <= 1.05: return "Square"
+    elif len(approx) > 5:
+        area = cv2.contourArea(contour)
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter > 0 and 0.7 < (4 * np.pi * area / (perimeter ** 2)) <= 1.2:
+            return "Circle"
+    return None
+
+def processFrame(frame):
+    """
+    Takes a camera frame, applies full detection logic, draws on the frame,
+    and determines the final avoidance command based on priority.
+    """
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    height, width, _ = frame.shape
+    frameCx, frameCy = width // 2, height // 2
+    
+    centerThreshold = 75
+
+    # Color Definitions
+    lowerRed1 = np.array([0, 120, 70]); upperRed1 = np.array([10, 255, 255])
+    lowerRed2 = np.array([170, 120, 70]); upperRed2 = np.array([180, 255, 255])
+    lowerBlue = np.array([90, 50, 50]); upperBlue = np.array([130, 255, 255])
+    lowerGreen = np.array([40, 50, 50]); upperGreen = np.array([80, 255, 255])
+
+    # Masking and Contours
+    maskRed = cv2.bitwise_or(cv2.inRange(hsv, lowerRed1, upperRed1), cv2.inRange(hsv, lowerRed2, upperRed2))
+    contoursRed, _ = cv2.findContours(maskRed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    maskBlue = cv2.inRange(hsv, lowerBlue, upperBlue)
+    contoursBlue, _ = cv2.findContours(maskBlue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    maskGreen = cv2.inRange(hsv, lowerGreen, upperGreen)
+    contoursGreen, _ = cv2.findContours(maskGreen, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Priority 1: Red Triangles
+    for c in contoursRed:
+        if cv2.contourArea(c) > 300 and detectShape(c) == "Triangle":
+            M = cv2.moments(c); cX = int(M["m10"] / M["m00"]); cY = int(M["m01"] / M["m00"])
+            command = "hover"
+            
+            # --- FIX: The logic is now separated from the drawing ---
+            # Step 1: Determine the command
+            if abs(cX - frameCx) > centerThreshold or abs(cY - frameCy) > centerThreshold:
+                if abs(cX - frameCx) > abs(cY - frameCy):
+                    command = "roll right" if cX < frameCx else "roll left"
+                else:
+                    command = "pitch down" if cY < frameCy else "pitch up"
+
+            # Step 2: Always draw the detected object and text
+            cv2.drawContours(frame, [c], 0, (0, 0, 255), 3)
+            cv2.putText(frame, f'DANGER! Cmd: {command}', (10, height - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
+            # Step 3: Return the result
+            return frame, command
+
+    # Priority 2: Blue Squares
+    for c in contoursBlue:
+        if cv2.contourArea(c) > 300 and detectShape(c) == "Square":
+            M = cv2.moments(c); cX = int(M["m10"] / M["m00"]); cY = int(M["m01"] / M["m00"])
+            command = "hover"
+
+            if abs(cX - frameCx) > centerThreshold or abs(cY - frameCy) > centerThreshold:
+                if abs(cX - frameCx) > abs(cY - frameCy):
+                    command = "roll right" if cX < frameCx else "roll left"
+                else:
+                    command = "pitch down" if cY < frameCy else "pitch up"
+
+            x, y, w, h = cv2.boundingRect(c)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            cv2.putText(frame, f'Boundary. Cmd: {command}', (10, height - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+            return frame, command
+            
+    # Priority 3: Green Circles
+    for c in contoursGreen:
+        if cv2.contourArea(c) > 300 and detectShape(c) == "Circle":
+            (x, y), r = cv2.minEnclosingCircle(c)
+            cv2.circle(frame, (int(x), int(y)), int(r), (0, 255, 0), 2)
+            cv2.putText(frame, 'Safe Zone', (10, height - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            return frame, "center"
+
+    return frame, "center"
+
