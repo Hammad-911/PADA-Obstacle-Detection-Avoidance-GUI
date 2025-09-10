@@ -1,4 +1,4 @@
-#PADA Obstacle Detection & Avoidance GUI
+PADA Obstacle Detection & Avoidance GUI
 This project is a real-time Graphical User Interface (GUI) developed for the Lycans PADA (Powered Autonomous Delivery Aircraft) project. The application uses a webcam to detect obstacles of different shapes and colors, and visualizes the aircraft's corresponding avoidance maneuvers in a simulated "Airplane POV" panel.
 
 Developed by Ahmed Hammad.
@@ -47,6 +47,6 @@ This will start a local web server, and your default browser will open with the 
 Project Structure
 The project is organized into two main Python files for better modularity:
 
-Visualization.py: This is the main application script. It handles the Streamlit user interface, manages the application state, and contains the visualization logic using the Pillow library. You run this file to start the app.
+trial.py: This is the main application script. It handles the Streamlit user interface, manages the application state, and contains the visualization logic using the Pillow library. You run this file to start the app.
 
 LycansOpenCV.py: This is a dedicated module that contains all the computer vision logic. It processes the camera frames to detect shapes and colors and returns the processed frame and the final avoidance command.
