@@ -1,0 +1,144 @@
+import streamlit as st
+import cv2
+from PIL import Image, ImageDraw
+import time
+
+# Import the computer vision module
+import LycansOpenCV as locv
+
+# =================================================================================
+# 1. PAGE CONFIGURATION & INITIALIZATION
+# =================================================================================
+st.set_page_config(layout="wide", page_title="PADA Real-Time Visualization")
+st.title("PADA Obstacle Detection & Avoidance GUI")
+st.subheader("This application uses your webcam to detect obstacles and visualizes the PADA's avoidance maneuvers in real-time.")
+st.write("Developed by Ahmed Hammad")
+
+# --- Initialize Session State
+if 'initialized' not in st.session_state:
+    st.session_state.currentRollAngle = 0
+    st.session_state.currentPitchPosition = 0
+    st.session_state.targetRoll = 0
+    st.session_state.targetPitch = 0
+    st.session_state.run = False
+    st.session_state.initialized = True
+
+# Animation constants
+rollSpeed = 4
+pitchSpeed = 8
+winWidth, winHeight = 600, 400
+
+# =================================================================================
+# 2. PILLOW (PIL) VISUALIZATION LOGIC
+# =================================================================================
+@st.cache_data
+def loadAirplaneImage():
+    """Loads the airplane image or creates a placeholder."""
+    try:
+        img = Image.open('airplane.png').convert("RGBA")
+        if img.getbbox(): return img.resize((150, 150), Image.Resampling.LANCZOS)
+    except FileNotFoundError:
+        st.warning("`airplane.png` not found. Using a placeholder.", icon="⚠️")
+    
+    placeholder = Image.new('RGBA', (150, 150), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(placeholder)
+    draw.polygon([(75, 20), (25, 130), (125, 130)], fill='white')
+    return placeholder
+
+@st.cache_data
+def loadSkyBackground():
+    """Loads the sky image or creates a black background as a fallback."""
+    try:
+        img = Image.open('sky.png').convert("RGBA")
+        return img.resize((winWidth, winHeight), Image.Resampling.LANCZOS)
+    except FileNotFoundError:
+        st.warning("`sky.png` not found. Using a black background.", icon="🖼️")
+        return Image.new('RGBA', (winWidth, winHeight), (0, 0, 0, 255))
+
+airplaneImg = loadAirplaneImage()
+skyBackground = loadSkyBackground()
+
+def updateAirplaneState(command):
+    """Updates the target position of the airplane based on a command string."""
+    if command == 'roll left': st.session_state.targetRoll = 45
+    elif command == 'roll right': st.session_state.targetRoll = -45
+    elif command == 'pitch up': st.session_state.targetPitch = -100
+    elif command == 'pitch down': st.session_state.targetPitch = 100
+    elif command in ['center', 'hover']:
+        st.session_state.targetRoll = 0
+        st.session_state.targetPitch = 0
+
+def animateAirplane():
+    """Smoothly animates the airplane towards its target."""
+    # Animate Roll
+    if abs(st.session_state.currentRollAngle - st.session_state.targetRoll) < rollSpeed:
+        st.session_state.currentRollAngle = st.session_state.targetRoll
+    elif st.session_state.currentRollAngle < st.session_state.targetRoll:
+        st.session_state.currentRollAngle += rollSpeed
+    elif st.session_state.currentRollAngle > st.session_state.targetRoll:
+        st.session_state.currentRollAngle -= rollSpeed
+        
+    # Animate Pitch
+    if abs(st.session_state.currentPitchPosition - st.session_state.targetPitch) < pitchSpeed:
+        st.session_state.currentPitchPosition = st.session_state.targetPitch
+    elif st.session_state.currentPitchPosition < st.session_state.targetPitch:
+        st.session_state.currentPitchPosition += pitchSpeed
+    elif st.session_state.currentPitchPosition > st.session_state.targetPitch:
+        st.session_state.currentPitchPosition -= pitchSpeed
+
+def renderAirplanePOV():
+    """Renders the airplane view using the sky background."""
+    background = skyBackground.copy()
+    rotatedAirplane = airplaneImg.rotate(st.session_state.currentRollAngle, resample=Image.BICUBIC, expand=True)
+    
+    airplaneX = (winWidth - rotatedAirplane.width) // 2
+    airplaneY = (winHeight - rotatedAirplane.height) // 2 + st.session_state.currentPitchPosition
+    
+    background.paste(rotatedAirplane, (airplaneX, airplaneY), rotatedAirplane)
+    return background
+
+# =================================================================================
+# 3. MAIN APP LAYOUT AND CONTROLS
+# =================================================================================
+col1, col2 = st.columns(2)
+if col1.button('Start'): st.session_state.run = True
+if col2.button('Stop'): st.session_state.run = False
+
+if st.session_state.run:
+    mainCols = st.columns(2)
+    with mainCols[0]:
+        st.subheader('Webcam Feed')
+        webcamPlaceholder = st.empty()
+    with mainCols[1]:
+        st.subheader('Airplane POV')
+        airplaneViewPlaceholder = st.empty()
+
+    capture = cv2.VideoCapture(0)
+    if not capture.isOpened():
+        st.error("Error: Could not open webcam.")
+        st.session_state.run = False
+    else:
+        while st.session_state.run:
+            ret, frame = capture.read()
+            if not ret:
+                st.error("Error: Couldn't read frame from webcam.")
+                st.session_state.run = False; break
+            
+            # Call the function from the imported module (using camelCase name)
+            processedFrame, obstacleCommand = locv.processFrame(frame)
+            
+            webcamPlaceholder.image(cv2.cvtColor(processedFrame, cv2.COLOR_BGR2RGB), use_container_width=True)
+            
+            updateAirplaneState(obstacleCommand)
+            animateAirplane()
+            
+            airplaneRender = renderAirplanePOV()
+            airplaneViewPlaceholder.image(airplaneRender)
+            
+            time.sleep(0.01)
+        
+        capture.release()
+
+if not st.session_state.run:
+    st.info("Press 'Start' to begin the webcam feed and visualization.", icon="ℹ️")
+
