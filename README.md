@@ -41,7 +41,7 @@ Make sure you have the following image files in the same directory as the Python
 ## **How to Run the Application**
 Once the setup is complete, navigate to the project directory in your terminal and run the following command:
 
-`streamlit run trial.py`
+`streamlit run Visualization.py`
 
 This will start a local web server, and your default browser will open with the application running.
 
